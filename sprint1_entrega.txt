@@ -1,0 +1,14 @@
+CHALLENGE SPRINT 01 - ENGMAN COPILOT (FIAP x MOTIVA)
+
+Grupo: 01 - Turma 1CCPS
+Recorte escolhido: A - Diagnostico e Confiabilidade
+
+Integrantes:
+Joao Florencio - RM 576950 - 1CCPS
+Leonardo Iglesias - RM 576557 - 1CCPS
+Guilherme dos Santos - RM 576921 - 1CCPS
+Ryan Alves - RM 576880 - 1CCPS
+Enzo Lozano - RM 574944 - 1CCPS
+
+Repositorio: https://github.com/SEU-USUARIO/engman-copilot
+Fluxograma: https://github.com/SEU-USUARIO/engman-copilot/blob/main/docs/arquitetura.png

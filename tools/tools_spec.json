@@ -1,0 +1,390 @@
+{
+  "projeto": "EngMan Copilot",
+  "versao": "sprint1-revisao",
+  "observacao": "Especificação documental das ferramentas previstas. Nenhuma ferramenta está implementada nesta Sprint. Os dados e retornos operacionais do cenário são simulados.",
+  "formato_tag": "TIPO-RODOVIA-KM-SEQ. O campo KM admite três ou quatro dígitos. Exemplos: CFTV-R01-K412-01, PMV-R01-K405-01 e CBX-R01-K420-03. O cenário fictício tem apenas a rodovia R01.",
+  "periodo_referencia_dados": {
+    "inicio": "2025-11-01",
+    "fim": "2026-10-31",
+    "descricao": "O histórico D03 cobre o período de 01/11/2025 a 31/10/2026. Consultas por janela em meses devem ser calculadas retroativamente a partir de 31/10/2026, e nunca a partir da data atual do computador. O período máximo consultável é de 12 meses."
+  },
+  "regras_gerais_execucao": [
+    "D01 é a fonte estruturada para ficha e criticidade cadastrada do ativo; consultar_ativo deve ser usada antes de recomendar prioridade.",
+    "D03 é a fonte estruturada para ocorrências; consultar_historico_falhas deve ser usada antes de formular hipótese baseada em reincidência.",
+    "D04 é consultado por consultar_procedimento. O texto integral dos POPs não será duplicado no RAG.",
+    "D06 é a fonte para os critérios de prioridade. A classificação deve ficar pendente de validação do engenheiro quando faltarem dados essenciais ou houver conflito não resolvido.",
+    "A aplicação deve validar os parâmetros, controlar acesso às ferramentas e tratar os códigos de erro. O modelo não deve completar dados ausentes por suposição.",
+    "Todos os retornos referentes ao cenário acadêmico devem identificar os dados como simulados."
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "status": "obrigatoria",
+      "function": {
+        "name": "consultar_ativo",
+        "description": "Consulta a ficha de um ativo no catálogo simulado D01. Pode receber a TAG completa ou, quando o usuário informar apenas o tipo e o km, consultar por tipo_ativo e km (a rodovia R01 é a única cadastrada neste cenário). Retorna os dados cadastrados, incluindo tipo, fabricante e modelo simulados, localização, data de instalação, vida útil estimada e criticidade. Use quando o usuário informar uma TAG, perguntar sobre a ficha ou criticidade do ativo e antes de recomendar prioridade. Não use esta ferramenta para consultar ocorrências.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string",
+              "pattern": "^(CFTV|PMV|CBX)-R[0-9]{2}-K[0-9]{3,4}-[0-9]{2}$",
+              "description": "TAG no formato TIPO-RODOVIA-KM-SEQ. O prefixo CBX identifica Callbox; o tipo retornado no cadastro será CALLBOX."
+            },
+            "tipo_ativo": {
+              "type": "string",
+              "enum": [
+                "CFTV",
+                "PMV",
+                "CALLBOX"
+              ],
+              "description": "Tipo do ativo. Usar junto com km quando o usuário não fornecer uma TAG completa."
+            },
+            "rodovia": {
+              "type": "string",
+              "enum": [
+                "R01"
+              ],
+              "default": "R01",
+              "description": "Rodovia do cenário simulado. Pode ser omitida porque D01 contém somente a rodovia fictícia R01."
+            },
+            "km": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 9999,
+              "description": "Quilômetro informado pelo usuário. Usar junto com tipo_ativo quando não houver TAG completa."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "tag"
+              ]
+            },
+            {
+              "required": [
+                "tipo_ativo",
+                "km"
+              ]
+            }
+          ]
+        }
+      },
+      "x_retorno": {
+        "campos": [
+          "tag",
+          "criterio_consulta (tag|tipo_e_km)",
+          "tipo_ativo (CFTV|PMV|CALLBOX)",
+          "fabricante",
+          "modelo",
+          "rodovia",
+          "km",
+          "praca_ou_trecho",
+          "data_instalacao",
+          "vida_util_estimada_anos",
+          "criticidade (alta|media|baixa)",
+          "simulado (true)"
+        ],
+        "observacao": "Fabricante, modelo, data, vida útil e criticidade pertencem ao catálogo fictício D01; não representam cadastro oficial da Motiva."
+      },
+      "x_falhas": {
+        "TAG_INVALIDA": "A TAG informada não corresponde ao padrão. Solicitar que o usuário confira a identificação e informar o formato esperado; não corrigir a TAG por conta própria. Se o usuário informou tipo e km sem TAG, usar a consulta alternativa por tipo_ativo e km.",
+        "ATIVO_NAO_ENCONTRADO": "A busca por TAG ou por tipo e km não encontrou cadastro em D01. Usar a FRASE F4, indicando D01/catálogo como fonte a consultar; não inventar TAG, não sugerir TAG semelhante e não criar histórico.",
+        "TIMEOUT": "Informar que o catálogo está indisponível e sugerir nova tentativa. Não responder com dados lembrados ou presumidos."
+      }
+    },
+    {
+      "type": "function",
+      "status": "obrigatoria",
+      "function": {
+        "name": "consultar_historico_falhas",
+        "description": "Consulta os registros simulados de falhas de um ativo no histórico D03. Use quando o usuário perguntar sobre ocorrências, reincidência, sintomas anteriores ou causas registradas, e antes de formular hipótese baseada no histórico. As janelas são calculadas em relação à data de referência fixa de 31/10/2026, e não à data atual.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string",
+              "pattern": "^(CFTV|PMV|CBX)-R[0-9]{2}-K[0-9]{3,4}-[0-9]{2}$",
+              "description": "TAG do ativo no formato TIPO-RODOVIA-KM-SEQ."
+            },
+            "janela_meses": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 12,
+              "description": "Quantidade de meses completos a consultar, contados para trás a partir de 31/10/2026. O padrão 12 cobre todo o período D03: 01/11/2025 a 31/10/2026."
+            },
+            "tipo_falha": {
+              "type": "string",
+              "enum": [
+                "imagem_degradada",
+                "perda_de_link",
+                "desfoque",
+                "modulo_led",
+                "comunicacao_cco",
+                "mensagem_travada",
+                "audio",
+                "bateria",
+                "geolocalizacao",
+                "outra"
+              ],
+              "description": "Filtro opcional pela categoria de falha. Omitir para consultar todas as ocorrências da TAG."
+            }
+          },
+          "required": [
+            "tag"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "x_retorno": {
+        "campos": [
+          "tag",
+          "data_inicio_consulta",
+          "data_fim_consulta",
+          "registros (lista com data, sintoma, tipo_falha, causa_identificada quando registrada, tempo_reparo_h, peca_trocada quando aplicável e reincidencia)",
+          "total_registros",
+          "simulado (true)"
+        ],
+        "observacao": "Campo causa_identificada pode estar ausente quando o registro não confirma uma causa. A ferramenta não deve preencher a causa ausente com inferência."
+      },
+      "x_falhas": {
+        "TAG_INVALIDA": "Solicitar conferência da TAG e informar o formato esperado.",
+        "ATIVO_NAO_ENCONTRADO": "Usar a FRASE F4. Não inventar histórico nem sugerir outra TAG.",
+        "SEM_REGISTROS": "O ativo existe, mas não há ocorrências no intervalo consultado. Informar esse resultado como [FATO] e não criar hipótese baseada em reincidência.",
+        "JANELA_FORA_DO_PERIODO": "A janela solicitada ultrapassa o período disponível em D03. Informar o intervalo disponível e pedir que o usuário escolha uma janela compatível.",
+        "TIMEOUT": "Informar indisponibilidade da consulta. Não usar histórico lembrado nem responder como se a consulta tivesse sido concluída."
+      }
+    },
+    {
+      "type": "function",
+      "status": "obrigatoria",
+      "function": {
+        "name": "abrir_ordem_servico",
+        "description": "Registra uma ordem de serviço simulada a partir de um rascunho previamente apresentado ao engenheiro e explicitamente confirmado. A aplicação só deve disponibilizar/executar esta ferramenta depois de registrar a confirmação do usuário para a versão exata do rascunho. O backend deve recuperar o rascunho pelo id_rascunho e comparar todos os parâmetros recebidos com os parâmetros aprovados; qualquer divergência deve impedir a abertura. Não use para criar rascunhos nem para tratar uma confirmação genérica como aprovação.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "id_rascunho": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "description": "Identificador criado e armazenado pela aplicação para o rascunho de OS. Não deve ser inventado pelo modelo. O registro associado precisa estar marcado pela aplicação como confirmado pelo usuário."
+            },
+            "tag": {
+              "type": "string",
+              "pattern": "^(CFTV|PMV|CBX)-R[0-9]{2}-K[0-9]{3,4}-[0-9]{2}$",
+              "description": "TAG do ativo que consta no rascunho aprovado."
+            },
+            "tipo_intervencao": {
+              "type": "string",
+              "enum": [
+                "corretiva",
+                "preventiva",
+                "inspecao",
+                "cbm"
+              ],
+              "description": "Tipo de intervenção presente no rascunho aprovado."
+            },
+            "prioridade": {
+              "type": "string",
+              "enum": [
+                "P1",
+                "P2",
+                "P3",
+                "P4"
+              ],
+              "description": "Prioridade definida conforme D06 e presente no rascunho aprovado."
+            },
+            "descricao": {
+              "type": "string",
+              "minLength": 20,
+              "maxLength": 800,
+              "description": "Descrição aprovada, separando fatos e hipóteses e sem dados pessoais. Deve corresponder exatamente ao texto armazenado no rascunho."
+            },
+            "janela_inicio": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Início da janela de atendimento em formato ISO 8601, conforme o rascunho aprovado."
+            },
+            "janela_fim": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Fim da janela de atendimento em formato ISO 8601, posterior ao início e conforme o rascunho aprovado."
+            }
+          },
+          "required": [
+            "id_rascunho",
+            "tag",
+            "tipo_intervencao",
+            "prioridade",
+            "descricao",
+            "janela_inicio",
+            "janela_fim"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "x_pre_condicoes": [
+        "A aplicação apresenta ao engenheiro o rascunho completo: TAG, tipo de intervenção, prioridade, descrição, janela de início e janela de fim.",
+        "A aplicação registra que o engenheiro respondeu explicitamente 'confirmo' ao rascunho completo e sem alterações pendentes.",
+        "A aplicação associa a confirmação à versão exata do rascunho e só então disponibiliza/executa a ferramenta.",
+        "O backend valida que id_rascunho existe, está confirmado e que todos os parâmetros recebidos correspondem exatamente ao rascunho aprovado.",
+        "O backend valida a existência da TAG e que janela_fim é posterior a janela_inicio. Uma alteração em qualquer parâmetro exige novo rascunho e nova confirmação."
+      ],
+      "x_retorno": {
+        "campos": [
+          "numero_os (formato OS-SIM-AAAA-NNNN)",
+          "status (aberta_simulada)",
+          "tag",
+          "id_rascunho",
+          "simulado (true)"
+        ],
+        "observacao": "Só informar que a OS foi aberta quando a ferramenta retornar status de sucesso e o número da OS."
+      },
+      "x_falhas": {
+        "RASCUNHO_NAO_ENCONTRADO": "Não abrir a OS. Informar que o rascunho não foi localizado e solicitar que seja elaborado novamente.",
+        "CONFIRMACAO_AUSENTE": "Não abrir a OS. A confirmação precisa estar registrada pela aplicação para aquele id_rascunho.",
+        "PARAMETROS_DIVERGENTES": "Não abrir a OS. Apresentar novamente os parâmetros atualizados e solicitar nova confirmação explícita.",
+        "ATIVO_NAO_ENCONTRADO": "Não abrir a OS. Usar a FRASE F4 e encaminhar para conferência do cadastro.",
+        "JANELA_INVALIDA": "Não abrir a OS. Solicitar correção da janela de atendimento e gerar novo rascunho para confirmação.",
+        "TIMEOUT": "Informar que a abertura não foi confirmada. Não afirmar que a OS foi aberta sem retorno de sucesso."
+      }
+    },
+    {
+      "type": "function",
+      "status": "obrigatoria",
+      "function": {
+        "name": "consultar_procedimento",
+        "description": "Consulta em D04 o POP previsto para o tipo de ativo e a intervenção informada. Retorna identificação do documento, finalidade, requisitos e restrições de segurança e informações do procedimento. Use quando o usuário pedir para consultar um POP ou perguntar qual documento se aplica. A consulta não autoriza a execução da atividade e não substitui o procedimento oficial vigente nem a avaliação de profissional habilitado.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tipo_ativo": {
+              "type": "string",
+              "enum": [
+                "CFTV",
+                "PMV",
+                "CALLBOX"
+              ],
+              "description": "Tipo do ativo conforme o catálogo. Para TAG com prefixo CBX, usar CALLBOX."
+            },
+            "tipo_intervencao": {
+              "type": "string",
+              "enum": [
+                "corretiva",
+                "preventiva",
+                "inspecao",
+                "cbm"
+              ],
+              "description": "Tipo de intervenção para localizar o POP aplicável."
+            }
+          },
+          "required": [
+            "tipo_ativo",
+            "tipo_intervencao"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "x_retorno": {
+        "campos": [
+          "codigo_pop",
+          "titulo",
+          "tipo_ativo",
+          "finalidade",
+          "pre_requisitos_seguranca",
+          "restricoes_e_condicoes_de_interrupcao",
+          "necessita_profissional_habilitado",
+          "etapas_informativas",
+          "referencias_de_seguranca",
+          "versao",
+          "simulado (true)"
+        ],
+        "observacao": "O retorno deve permitir consultar e resumir o POP sem apresentar a ferramenta como autorização de trabalho ou substituto das regras de segurança oficiais."
+      },
+      "x_falhas": {
+        "POP_NAO_ENCONTRADO": "Usar a FRASE F4, indicando D04/POP como fonte a consultar. Não improvisar um procedimento.",
+        "POP_INCOMPLETO": "Informar quais informações estão ausentes e encaminhar ao responsável. Não completar etapas por conhecimento geral.",
+        "TIMEOUT": "Informar indisponibilidade da consulta e não fornecer um passo a passo de memória."
+      }
+    },
+    {
+      "type": "function",
+      "status": "diferencial",
+      "function": {
+        "name": "calcular_metricas_confiabilidade",
+        "description": "Calcula λ, MTBF e R(t) com base nas ocorrências do histórico D03, usando o modelo exponencial e taxa de falha constante. Use somente quando o usuário solicitar métricas de confiabilidade. A ferramenta deve informar o período efetivamente usado, o horizonte de R(t), a exposição operacional considerada e as premissas. Não produz tendência crescente, estável ou decrescente, pois esse método não está definido no projeto.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string",
+              "pattern": "^(CFTV|PMV|CBX)-R[0-9]{2}-K[0-9]{3,4}-[0-9]{2}$",
+              "description": "TAG do ativo."
+            },
+            "periodo_meses": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 12,
+              "description": "Período de observação em meses completos, contado para trás a partir de 31/10/2026. O histórico disponível cobre no máximo 12 meses."
+            },
+            "tempo_operacao_horas": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Horas de operação no período, quando houver dado confiável fornecido pelo conjunto de dados ou pelo usuário. Se omitido, a ferramenta poderá usar a aproximação de operação contínua (24 h/dia), descontando os tempos de reparo registrados em D03, e deverá identificar o resultado como estimado."
+            },
+            "horizonte_horas": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 720,
+              "description": "Horizonte t usado em R(t), em horas. O padrão de 720 horas corresponde a 30 dias."
+            }
+          },
+          "required": [
+            "tag"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "x_metodologia": {
+        "taxa_de_falha": "λ = n_falhas / horas_de_operacao",
+        "mtbf": "MTBF = horas_de_operacao / n_falhas = 1/λ, quando n_falhas > 0",
+        "confiabilidade": "R(t) = exp(-λ × t), com t expresso em horas",
+        "premissas": [
+          "Modelo exponencial com taxa de falha constante no período observado.",
+          "n_falhas é a quantidade de ocorrências registradas para a TAG em D03 dentro do período consultado.",
+          "Se horas de operação não forem fornecidas, a aproximação de operação contínua deve ser declarada como premissa; não deve ser apresentada como medição real.",
+          "Se não houver falhas registradas ou não for possível determinar uma exposição operacional positiva, a ferramenta deve retornar DADOS_INSUFICIENTES em vez de atribuir λ = 0 ou MTBF infinito.",
+          "Amostra com menos de 3 falhas gera alerta de amostra pequena. O limiar de 3 é uma regra de sinalização do projeto acadêmico, não um padrão oficial."
+        ]
+      },
+      "x_retorno": {
+        "campos": [
+          "tag",
+          "periodo_consultado_inicio",
+          "periodo_consultado_fim",
+          "n_falhas",
+          "tempo_operacao_horas_utilizado",
+          "origem_tempo_operacao (informado|estimado_24x7_menos_reparos)",
+          "lambda_por_hora",
+          "mtbf_horas",
+          "horizonte_horas",
+          "r_t",
+          "alerta_amostra_pequena (true|false)",
+          "premissas",
+          "simulado (true)"
+        ],
+        "observacao": "Não retornar campo tendencia nesta versão. Qualquer conclusão sobre tendência exige método e dados comparáveis definidos em atualização futura da especificação."
+      },
+      "x_falhas": {
+        "DADOS_INSUFICIENTES": "Não apresentar λ, MTBF ou R(t). Explicar se faltam ocorrências, período ou horas de operação confiáveis.",
+        "ATIVO_NAO_ENCONTRADO": "Usar a FRASE F4. Não calcular métricas para TAG não cadastrada.",
+        "PERIODO_FORA_DO_DATASET": "Informar que D03 cobre somente 01/11/2025 a 31/10/2026 e solicitar período compatível.",
+        "TIMEOUT": "Informar indisponibilidade e não calcular as métricas manualmente."
+      }
+    }
+  ]
+}
